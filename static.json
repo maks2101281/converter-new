@@ -1,0 +1,11 @@
+{
+  "root": ".",
+  "clean_urls": true,
+  "headers": {
+    "/**": {
+      "Content-Security-Policy": "default-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com; worker-src blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com; connect-src 'self' blob: https://unpkg.com",
+      "Cross-Origin-Embedder-Policy": "require-corp",
+      "Cross-Origin-Opener-Policy": "same-origin"
+    }
+  }
+} 

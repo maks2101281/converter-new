@@ -1,0 +1,11 @@
+{
+  "name": "file-converter",
+  "version": "1.0.0",
+  "description": "Universal File Converter",
+  "scripts": {
+    "start": "serve ."
+  },
+  "dependencies": {
+    "serve": "^14.0.0"
+  }
+} 
