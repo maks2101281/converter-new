@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Универсальный Конвертер Файлов</title>
+    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.4/dist/ffmpeg.min.js"></script>
+    <style>
+        :root {
+            --primary: #2196F3;
+            --secondary: #4CAF50;
+            --background: #f5f5f5;
+            --text: #2c3e50;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Roboto', sans-serif;
+        }
+
+        body {
+            background: var(--background);
+            color: var(--text);
+            line-height: 1.6;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+
+        .header {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+            padding: 2rem;
+            border-radius: 15px 15px 0 0;
+            text-align: center;
+        }
+
+        .converter-area {
+            padding: 2rem;
+        }
+
+        .drop-zone {
+            border: 3px dashed #ccc;
+            border-radius: 12px;
+            padding: 2rem;
+            text-align: center;
+            transition: all 0.3s;
+            margin-bottom: 1.5rem;
+            position: relative;
+        }
+
+        .drop-zone.highlight {
+            border-color: var(--primary);
+            background: rgba(33, 150, 243, 0.05);
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .custom-file-input {
+            background: var(--primary);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: inline-block;
+            margin-top: 1rem;
+        }
+
+        .file-list {
+            margin: 1rem 0;
+            border: 1px solid #eee;
+            border-radius: 8px;
+            padding: 1rem;
+        }
+
+        .file-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.5rem;
+            border-bottom: 1px solid #eee;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 10px;
+            background: #eee;
+            border-radius: 5px;
+            margin-top: 1rem;
+            overflow: hidden;
+        }
+
+        .progress {
+            width: 0%;
+            height: 100%;
+            background: var(--primary);
+            transition: width 0.3s;
+        }
+
+        .convert-btn {
+            background: var(--secondary);
+            color: white;
+            padding: 1rem 2rem;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 1rem;
+            transition: all 0.3s;
+            width: 100%;
+        }
+
+        .convert-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .status {
+            margin-top: 1rem;
+            padding: 1rem;
+            background: #f8f9fa;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        @media (max-width: 480px) {
+            .file-item {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .custom-file-input {
+                width: 100%;
+                box-sizing: border-box;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Универсальный Конвертер Файлов</h1>
+            <p>Конвертируйте файлы между различными форматами онлайн</p>
+        </div>
+
+        <div class="converter-area">
+            <div class="drop-zone" id="dropZone">
+                <p>Перетащите файлы сюда или</p>
+                <label class="custom-file-input">
+                    Выбрать файлы
+                    <input type="file" class="file-input" id="fileInput" multiple>
+                </label>
+            </div>
+
+            <div class="file-list" id="fileList"></div>
+            <div class="progress-bar">
+                <div class="progress" id="progress"></div>
+            </div>
+
+            <div class="status" id="status">Готово к работе</div>
+            <button class="convert-btn" id="convertBtn" disabled>Начать конвертацию</button>
+        </div>
+    </div>
+
+    <script>
+        const { createFFmpeg, fetchFile } = FFmpeg;
+        const ffmpeg = createFFmpeg({
+            log: true,
+            corePath: 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js'
+        });
+
+        let filesQueue = [];
+        let isProcessing = false;
+
+        // Инициализация FFmpeg
+        const initFFmpeg = async () => {
+            try {
+                await ffmpeg.load();
+                document.getElementById('status').textContent = 'Система готова';
+            } catch (error) {
+                showError('Ошибка загрузки конвертера. Обновите страницу.');
+            }
+        };
+        initFFmpeg();
+
+        // Обработчики файлов
+        const setupFileHandlers = () => {
+            const dropZone = document.getElementById('dropZone');
+            const fileInput = document.getElementById('fileInput');
+
+            // Для десктопов
+            dropZone.addEventListener('dragover', handleDragOver);
+            dropZone.addEventListener('drop', handleDrop);
+
+            // Для мобильных
+            fileInput.addEventListener('change', handleFileSelect);
+        };
+
+        const handleDragOver = (e) => {
+            e.preventDefault();
+            dropZone.classList.add('highlight');
+        };
+
+        const handleDrop = (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('highlight');
+            handleFiles(e.dataTransfer.files);
+        };
+
+        const handleFileSelect = (e) => {
+            handleFiles(e.target.files);
+        };
+
+        const handleFiles = (newFiles) => {
+            const validFiles = Array.from(newFiles).filter(file =>
+                file.size <= 500 * 1024 * 1024 &&
+                /^(video|audio|image)/.test(file.type)
+            );
+
+            if(validFiles.length === 0) {
+                showError('Неподдерживаемый формат или размер файла >500MB');
+                return;
+            }
+
+            filesQueue = [...filesQueue, ...validFiles];
+            updateFileList();
+            document.getElementById('convertBtn').disabled = false;
+        };
+
+        const updateFileList = () => {
+            const fileList = document.getElementById('fileList');
+            fileList.innerHTML = filesQueue.map(file => `
+                <div class="file-item">
+                    <span>${file.name} (${formatSize(file.size)})</span>
+                    <select class="target-format" data-name="${file.name}">
+                        ${getFormatOptions(file)}
+                    </select>
+                </div>
+            `).join('');
+        };
+
+        const getFormatOptions = (file) => {
+            const ext = file.name.split('.').pop().toLowerCase();
+            const type = file.type.split('/')[0];
+            const formats = {
+                video: ['mp4', 'avi', 'mov', 'mkv', 'webm'],
+                audio: ['mp3', 'wav', 'ogg', 'aac'],
+                image: ['jpg', 'png', 'webp', 'gif']
+            }[type] || [];
+
+            return formats.filter(f => f !== ext).map(f =>
+                `<option value="${f}">${f.toUpperCase()}</option>`
+            ).join('');
+        };
+
+        // Конвертация
+        document.getElementById('convertBtn').addEventListener('click', startConversion);
+
+        const startConversion = async () => {
+            if (isProcessing) return;
+            isProcessing = true;
+
+            try {
+                for (let i = 0; i < filesQueue.length; i++) {
+                    const file = filesQueue[i];
+                    const format = document.querySelector(`select[data-name="${file.name}"]`).value;
+
+                    updateProgress((i / filesQueue.length) * 100);
+                    updateStatus(`Обработка: ${file.name} → ${format}`);
+
+                    const convertedBlob = await convertFile(file, format);
+                    handleDownload(convertedBlob, file.name, format);
+                }
+
+                filesQueue = [];
+                updateFileList();
+                updateStatus('Все файлы обработаны');
+            } catch (error) {
+                showError(`Ошибка: ${error.message}`);
+            } finally {
+                isProcessing = false;
+                document.getElementById('convertBtn').disabled = true;
+                updateProgress(0);
+            }
+        };
+
+        const convertFile = async (file, targetFormat) => {
+            const type = file.type.split('/')[0];
+
+            switch(type) {
+                case 'video':
+                case 'audio':
+                    return convertWithFFmpeg(file, targetFormat);
+                case 'image':
+                    return convertImage(file, targetFormat);
+                default:
+                    throw new Error('Неподдерживаемый тип файла');
+            }
+        };
+
+        const convertWithFFmpeg = async (file, format) => {
+            try {
+                ffmpeg.FS('writeFile', file.name, await fetchFile(file));
+                const outputName = `output.${format}`;
+
+                await ffmpeg.run('-i', file.name, outputName);
+                const data = ffmpeg.FS('readFile', outputName);
+
+                return new Blob([data.buffer], { type: file.type });
+            } finally {
+                ffmpeg.FS('unlink', file.name);
+            }
+        };
+
+        const convertImage = async (file, format) => {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0);
+
+                    canvas.toBlob(blob => resolve(blob), `image/${format}`, 0.9);
+                };
+                img.src = URL.createObjectURL(file);
+            });
+        };
+
+        // Вспомогательные функции
+        const handleDownload = (blob, originalName, format) => {
+            const fileName = `${originalName.split('.')[0]}.${format}`;
+            const url = URL.createObjectURL(blob);
+
+            if(navigator.userAgent.match(/iPhone|iPad|iPod/i)) {
+                const link = document.createElement('a');
+                link.href = url;
+                link.target = '_blank';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            } else {
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = fileName;
+                a.style.display = 'none';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            }
+
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        };
+
+        const updateProgress = (percent) => {
+            document.getElementById('progress').style.width = `${percent}%`;
+        };
+
+        const updateStatus = (text) => {
+            document.getElementById('status').textContent = text;
+        };
+
+        const showError = (message) => {
+            alert(message);
+            updateStatus('Ошибка');
+        };
+
+        const formatSize = (bytes) => {
+            const sizes = ['Б', 'КБ', 'МБ', 'ГБ'];
+            if (bytes === 0) return '0 Б';
+            const i = Math.floor(Math.log(bytes) / Math.log(1024));
+            return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${sizes[i]}`;
+        };
+
+        // Инициализация
+        setupFileHandlers();
+    </script>
+</body>
+</html>
